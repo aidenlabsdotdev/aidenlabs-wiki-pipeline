@@ -1,0 +1,5 @@
+[console_scripts]
+harvest = scripts.harvest:main
+pipeline = scripts.pipeline:main
+sync-projects = scripts.sync_projects:main
+synthesize = scripts.synthesize:main

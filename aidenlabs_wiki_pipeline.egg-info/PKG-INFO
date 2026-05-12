@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: aidenlabs-wiki-pipeline
+Version: 0.1.0
+Summary: Daily wiki pipeline for Aiden Labs Obsidian vault
+Requires-Python: >=3.11

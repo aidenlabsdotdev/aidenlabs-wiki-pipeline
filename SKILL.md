@@ -9,115 +9,132 @@ description: >
 
 # Wiki Daily Pipeline
 
-Orchestrates the daily wiki update pipeline using scripts in `~/Tasks/aidenlabs-wiki-pipeline/`
-and spawns `hermes agent` subprocesses for LLM-heavy phases.
+Orchestrates the daily wiki update pipeline. Mechanical scripts live in
+`~/Tasks/aidenlabs-wiki-pipeline/` (uv-managed). LLM phases use `delegate_task`
+to avoid polluting state.db with pipeline agent sessions.
 
-## Configuration
-
-```bash
-VAULT="/home/jasper/Obsidian/aidenlabs"
-PIPELINE="/home/jasper/Tasks/aidenlabs-wiki-pipeline"
-TMP_DIR="$HOME/.cache/wiki-pipeline"
-mkdir -p "$TMP_DIR"
-```
-
-## Usage
+## Repo Setup
 
 ```bash
-python "$PIPELINE/scripts/harvest.py" --date YYYY-MM-DD --output "$TMP_DIR/digest.json"
+cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
 ```
 
-Then spawn hermes agent subprocesses for each LLM phase.
+## Orchestrating a Day
 
-## Pipeline Steps
+Run these steps sequentially for each date. Mechanical phases via `terminal`,
+LLM phases via `delegate_task`.
 
 ### Phase 0: Harvest (mechanical)
 
 ```bash
-python "$PIPELINE/scripts/harvest.py" --date "$DATE" --output "$TMP_DIR/digest.json"
+cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
+python scripts/pipeline.py harvest --date 2026-05-04
 ```
 
-If no sessions found for the date, log and exit early.
+Output: `~/.cache/wiki-pipeline/digest.json`
+Exit code 1 = no sessions for that date → skip remaining phases.
 
-### Phase 1: Journal Generation (LLM via hermes agent)
+### Phase 1: Journal Generation (delegate_task)
 
-Spawn a new `hermes agent` subprocess with a prompt that:
-- Reads `$TMP_DIR/digest.json`
-- Reads existing vault context (`$VAULT/index.md`, `$VAULT/company/company.md`)
-- Writes `$VAULT/journal/YYYY-MM-DD.md` following the template in `templates/journal.md.j2`
+Delegate with toolsets `["file", "terminal"]`:
 
-The prompt should instruct the agent to:
-1. Read the digest JSON
-2. Summarize the day's activity across all sessions
-3. Identify projects/repos touched
-4. Extract decisions made, learnings, and insights
-5. List artifacts created (files, commits, deployments)
-6. Write the journal entry with proper frontmatter and wiki links
-
-Command:
-```bash
-hermes agent "Generate journal entry for $DATE. Read $TMP_DIR/digest.json, summarize sessions, extract learnings, write to $VAULT/journal/$DATE.md"
+```
+goal: Generate journal entry for {date}
+context: |
+  Read ~/.cache/wiki-pipeline/digest.json (session digest).
+  Read /home/jasper/Obsidian/aidenlabs/index.md and company/company.md for context.
+  
+  Write /home/jasper/Obsidian/aidenlabs/journal/{date}.md with:
+  - YAML frontmatter: title, summary (≤200 chars), lifecycle: draft,
+    provenance: pipeline/daily-update, created, updated, tags: [journal]
+  - Sections: Summary, Sessions, Projects Touched, Decisions,
+    Learnings & Insights, Artifacts
+  - Use wiki links [[like this]] for references
 ```
 
-### Phase 2: Projects Sync (mechanical + LLM)
+Skip if journal file already exists (use `--force` concept).
 
-Run mechanical scan:
+### Phase 2: Projects Sync (mechanical + delegate_task)
+
+Mechanical scan:
 ```bash
-python "$PIPELINE/scripts/sync_projects.py" --vault "$VAULT" --output "$TMP_DIR/projects-manifest.json"
+cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
+python scripts/pipeline.py projects --vault /home/jasper/Obsidian/aidenlabs/
 ```
 
-Then spawn `hermes agent` to:
-- Read the manifest
-- Decide which repos are actual "projects" vs throwaway experiments
-- Create/update project pages under `$VAULT/projects/<slug>/`
-- Link repos to projects appropriately
+Output: `~/.cache/wiki-pipeline/projects-manifest.json`
 
-Command:
-```bash
-hermes agent "Sync projects. Read $TMP_DIR/projects-manifest.json, decide what's a real project, create/update pages in $VAULT/projects/"
+Then delegate with toolsets `["file", "terminal", "web"]`:
+
+```
+goal: Sync project pages in the Obsidian vault
+context: |
+  Read ~/.cache/wiki-pipeline/projects-manifest.json.
+  It contains tasks_repos, github_org_repos, vault_projects.
+  
+  Decide which repos are actual projects vs throwaway experiments.
+  Criteria: active development, business relevance, meaningful content.
+  
+  For each real project, create/update:
+  /home/jasper/Obsidian/aidenlabs/projects/<slug>/<slug>.md
+  
+  Include: overview, linked repos, current status, related concepts.
+  Use kebab-case slugs. Be conservative.
 ```
 
-### Phase 3: Synthesis (mechanical + LLM)
+### Phase 3: Synthesis (mechanical + delegate_task)
 
-Run mechanical analysis:
+Mechanical analysis:
 ```bash
-python "$PIPELINE/scripts/synthesize.py" --vault "$VAULT" --output "$TMP_DIR/synthesis-candidates.json"
+cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
+python scripts/pipeline.py synthesis --vault /home/jasper/Obsidian/aidenlabs/
 ```
 
-Then spawn `hermes agent` to:
-- Read candidates
-- Draft synthesis pages for top candidates
-- Follow Karpathy-style synthesis pattern: Connection → Co-occurrence → Insight → Tensions → Open Questions
+Output: `~/.cache/wiki-pipeline/synthesis-candidates.json`
 
-Command:
-```bash
-hermes agent "Run synthesis pass. Read $TMP_DIR/synthesis-candidates.json, draft synthesis pages in $VAULT/synthesis/"
+If candidates exist, delegate with toolsets `["file", "terminal"]`:
+
+```
+goal: Draft synthesis pages for top candidates
+context: |
+  Read ~/.cache/wiki-pipeline/synthesis-candidates.json.
+  Vault at /home/jasper/Obsidian/aidenlabs/.
+  
+  For top 3 candidates, create synthesis/<A>-x-<B>.md:
+  1. Connection — how topics relate
+  2. Where They Co-occur — pages linking to both
+  3. Cross-cutting Insight — what the connection reveals
+  4. Tensions — contradictions or trade-offs
+  5. Open Questions — unresolved areas
+  
+  Add frontmatter: title, summary, lifecycle: draft, tags.
+  Back-link from source pages where appropriate.
 ```
 
 ### Phase 4: Finalize (mechanical)
 
-After all phases complete:
-1. Regenerate `notes.json` in the deploy directory
-2. Append to `$VAULT/log.md`
-3. Sync vault to deploy directory:
-   ```bash
-   rsync -av --delete --exclude='.obsidian' --exclude='*.tmp' "$VAULT/" ~/Tasks/aidenlabs-vault/public/
-   ```
-
-## Retroactive Mode
-
-To run retroactively through multiple days:
 ```bash
-for date in 2026-05-04 2026-05-05 2026-05-06; do
-  echo "=== Processing $date ==="
-  # Run all phases for this date
-done
+cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
+python scripts/pipeline.py finalize --date {date} --vault /home/jasper/Obsidian/aidenlabs/
 ```
 
-Each day builds incrementally — journal entries accumulate, projects grow, synthesis compounds.
+Does: append to log.md, rsync to public/, regenerate notes.json.
 
-## Idempotency
+## Retroactive Sequential Run
 
-- If `$VAULT/journal/YYYY-MM-DD.md` already exists, skip Phase 1 (or offer to overwrite)
-- Projects sync is additive — only creates missing pages, updates existing ones
-- Synthesis skips pairs that already have synthesis pages
+For multiple dates, run phases sequentially. Each day builds on the previous:
+
+```
+for date in 2026-05-04 2026-05-05 2026-05-06:
+  Phase 0: harvest --date $date
+  Phase 1: delegate journal (skip if exists)
+  Phase 2: projects scan + delegate
+  Phase 3: synthesis scan + delegate
+  Phase 4: finalize
+```
+
+## Key Design Decision
+
+LLM phases use `delegate_task` NOT `hermes chat -q` subprocesses. This avoids
+creating agent sessions in state.db that would be harvested as "activity" on
+subsequent runs, creating a feedback loop.

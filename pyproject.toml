@@ -1,0 +1,15 @@
+[project]
+name = "aidenlabs-wiki-pipeline"
+version = "0.1.0"
+description = "Daily wiki pipeline for Aiden Labs Obsidian vault"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+harvest = "scripts.harvest:main"
+sync-projects = "scripts.sync_projects:main"
+synthesize = "scripts.synthesize:main"
+pipeline = "scripts.pipeline:main"
+
+[tool.uv]
+package = false
