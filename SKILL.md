@@ -13,6 +13,17 @@ Orchestrates the daily wiki update pipeline. Mechanical scripts live in
 `~/Tasks/aidenlabs-wiki-pipeline/` (uv-managed). LLM phases use `delegate_task`
 to avoid polluting state.db with pipeline agent sessions.
 
+## Vault Layout
+
+```
+company/              — Company info
+projects/<name>/      — Active projects
+synthesis/            — Cross-project synthesis
+journal/              — Daily records
+_meta/                — System context (index.md, hot.md, log.md, _insights.md, taxonomy.md)
+AGENTS.md             — Conventions (tags, style, visibility)
+```
+
 ## Repo Setup
 
 ```bash
@@ -21,8 +32,9 @@ cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
 
 ## Orchestrating a Day
 
-Run these steps sequentially for each date. Mechanical phases via `terminal`,
-LLM phases via `delegate_task`.
+Run these steps sequentially. Mechanical phases via `terminal`, LLM phases via `delegate_task`.
+
+Always pass `_meta/AGENTS.md` (conventions) and `_meta/index.md` (vault map) as context to LLM phases.
 
 ### Phase 0: Harvest (mechanical)
 
@@ -32,7 +44,7 @@ python scripts/pipeline.py harvest --date 2026-05-04
 ```
 
 Output: `~/.cache/wiki-pipeline/digest.json`
-Exit code 1 = no sessions for that date → skip remaining phases.
+Exit code 1 = no sessions → skip remaining phases.
 
 ### Phase 1: Journal Generation (delegate_task)
 
@@ -42,8 +54,10 @@ Delegate with toolsets `["file", "terminal"]`:
 goal: Generate journal entry for {date}
 context: |
   Read ~/.cache/wiki-pipeline/digest.json (session digest).
-  Read /home/jasper/Obsidian/aidenlabs/index.md and company/company.md for context.
-  
+  Read /home/jasper/Obsidian/aidenlabs/AGENTS.md (conventions).
+  Read /home/jasper/Obsidian/aidenlabs/_meta/index.md (vault map).
+  Read /home/jasper/Obsidian/aidenlabs/company/company.md.
+
   Write /home/jasper/Obsidian/aidenlabs/journal/{date}.md with:
   - YAML frontmatter: title, summary (≤200 chars), lifecycle: draft,
     provenance: pipeline/daily-update, created, updated, tags: [journal]
@@ -52,7 +66,7 @@ context: |
   - Use wiki links [[like this]] for references
 ```
 
-Skip if journal file already exists (use `--force` concept).
+Skip if journal file already exists.
 
 ### Phase 2: Projects Sync (mechanical + delegate_task)
 
@@ -70,14 +84,12 @@ Then delegate with toolsets `["file", "terminal", "web"]`:
 goal: Sync project pages in the Obsidian vault
 context: |
   Read ~/.cache/wiki-pipeline/projects-manifest.json.
-  It contains tasks_repos, github_org_repos, vault_projects.
-  
+  Read /home/jasper/Obsidian/aidenlabs/AGENTS.md (conventions).
+
   Decide which repos are actual projects vs throwaway experiments.
-  Criteria: active development, business relevance, meaningful content.
-  
-  For each real project, create/update:
+  For each real project, create:
   /home/jasper/Obsidian/aidenlabs/projects/<slug>/<slug>.md
-  
+
   Include: overview, linked repos, current status, related concepts.
   Use kebab-case slugs. Be conservative.
 ```
@@ -92,23 +104,23 @@ python scripts/pipeline.py synthesis --vault /home/jasper/Obsidian/aidenlabs/
 
 Output: `~/.cache/wiki-pipeline/synthesis-candidates.json`
 
-If candidates exist, delegate with toolsets `["file", "terminal"]`:
+If ≥3 candidates exist, delegate with toolsets `["file", "terminal"]`:
 
 ```
 goal: Draft synthesis pages for top candidates
 context: |
   Read ~/.cache/wiki-pipeline/synthesis-candidates.json.
+  Read /home/jasper/Obsidian/aidenlabs/AGENTS.md (conventions).
   Vault at /home/jasper/Obsidian/aidenlabs/.
-  
+
   For top 3 candidates, create synthesis/<A>-x-<B>.md:
   1. Connection — how topics relate
   2. Where They Co-occur — pages linking to both
   3. Cross-cutting Insight — what the connection reveals
   4. Tensions — contradictions or trade-offs
   5. Open Questions — unresolved areas
-  
+
   Add frontmatter: title, summary, lifecycle: draft, tags.
-  Back-link from source pages where appropriate.
 ```
 
 ### Phase 4: Finalize (mechanical)
@@ -118,23 +130,10 @@ cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
 python scripts/pipeline.py finalize --date {date} --vault /home/jasper/Obsidian/aidenlabs/
 ```
 
-Does: append to log.md, rsync to public/, regenerate notes.json.
+Does: append to `_meta/log.md`, rsync to public/, regenerate notes.json.
 
-## Retroactive Sequential Run
+## Key Design
 
-For multiple dates, run phases sequentially. Each day builds on the previous:
-
-```
-for date in 2026-05-04 2026-05-05 2026-05-06:
-  Phase 0: harvest --date $date
-  Phase 1: delegate journal (skip if exists)
-  Phase 2: projects scan + delegate
-  Phase 3: synthesis scan + delegate
-  Phase 4: finalize
-```
-
-## Key Design Decision
-
-LLM phases use `delegate_task` NOT `hermes chat -q` subprocesses. This avoids
-creating agent sessions in state.db that would be harvested as "activity" on
-subsequent runs, creating a feedback loop.
+- **LLM phases use `delegate_task`** NOT `hermes chat -q` subprocesses — avoids creating agent sessions in state.db that would be harvested as "activity"
+- **`_meta/` is read-only context** — conventions, index, hot snapshot, insights, taxonomy. Pipeline reads from it, doesn't write to it (except log.md appends)
+- **Idempotent** — journal entries skipped if they exist, projects additive, synthesis skips existing pairs
