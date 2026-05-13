@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 VAULT_DEFAULT = os.path.expanduser("~/Obsidian/aidenlabs")
 TMP_DIR = os.path.expanduser("~/.cache/wiki-pipeline")
@@ -71,7 +72,7 @@ def cmd_projects(args):
 
 
 def cmd_finalize(args):
-    """Append log, rsync to public/, regenerate notes.json."""
+    """Append log, sanitize frontmatter, rsync to public/, regenerate notes.json."""
     vault = args.vault
     date = args.date
 
@@ -81,6 +82,23 @@ def cmd_finalize(args):
     with open(log_path, "a") as f:
         f.write(f"- [{timestamp}] PIPELINE-RUN date={date}\n")
     print(f"Logged to {log_path}")
+
+    # Sanitize frontmatter (ensure YAML-safe quoting)
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from sanitize_frontmatter import sanitize_frontmatter as _sf
+    sf_count = 0
+    for md_file in sorted(Path(vault).rglob('*.md')):
+        try:
+            content = md_file.read_text(encoding='utf-8')
+        except Exception:
+            continue
+        new_content, changes = _sf(content)
+        if changes > 0:
+            md_file.write_text(new_content, encoding='utf-8')
+            sf_count += changes
+    if sf_count:
+        print(f"Sanitized {sf_count} frontmatter field(s)")
 
     # Sync to public
     result = subprocess.run(
