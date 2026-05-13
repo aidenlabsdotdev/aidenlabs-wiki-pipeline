@@ -60,6 +60,13 @@ def sanitize_frontmatter(content: str) -> tuple[str, int]:
                 new_lines.append(line)
                 continue
 
+            # Skip YAML inline-list values like ``tags: [a, b, c]`` — quoting
+            # them turns the list into a single string literal named "[a, b, c]",
+            # which Obsidian then misrenders.  Also skip flow-mapping values.
+            if value.startswith('[') or value.startswith('{'):
+                new_lines.append(line)
+                continue
+
             # Check if it looks like a number or boolean
             if re.match(r'^[~]?-?\d+\.?\d*$', value):
                 new_lines.append(line)

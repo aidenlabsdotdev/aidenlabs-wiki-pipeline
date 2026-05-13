@@ -1,27 +1,46 @@
 ---
 name: synthesis-generation
 description: >
-  Draft synthesis pages for co-occurring concepts. Reads synthesis candidates
-  from mechanical analysis, then creates cross-project synthesis pages.
+  Draft synthesis pages for co-occurring concepts.  Reads bucketed
+  candidates from mechanical analysis (fresh + refresh), then creates or
+  updates cross-project synthesis pages.
   Input: synthesis-candidates.json, source project/concept pages.
-  Output: synthesis/<A>-x-<B>.md for top candidates
+  Output: synthesis/<A>-x-<B>.md
 ---
 
 # Synthesis Generation Prompt
 
-Draft synthesis pages for the top co-occurring concept pairs in the vault.
+Draft and refresh synthesis pages for the bucketed candidates listed in
+the candidates file.
 
 ## Context Files
 
 Read these files first:
-- `{{candidates_path}}` — Synthesis candidates (co-occurrence analysis)
-- `{{vault_path}}/AGENTS.md` — Vault conventions and PII redaction rules
-- For each candidate pair, read the source pages being synthesized
+- `{{candidates_path}}` — bucketed synthesis candidates
+- `{{vault_path}}/AGENTS.md` — Vault conventions
+- For each candidate, read the two source pages it links
 
-## Output
+## Candidate Buckets
 
-For the **top {{top_n}}** candidates (that don't already have synthesis pages), create:
-`{{vault_path}}/synthesis/{{A_slug}}-x-{{B_slug}}.md`
+The candidates file groups picks under `buckets.fresh` and
+`buckets.refresh`.  Treat them differently:
+
+- **`bucket: "fresh"`** — no synthesis page exists yet.  Create one from
+  scratch at `synthesis/<suggested_filename>` (the file value is already
+  the correct slug).
+- **`bucket: "refresh"`** — a synthesis page already exists at
+  `existing_path`.  The candidate has `delta_score > 0`, meaning new
+  co-occurrence has accumulated since the page was last updated.
+  **Read the existing page first, then merge** — preserve prior
+  analysis, timeline entries, and provenance markers.  Add the new
+  co-occurrences under "Where They Co-occur", and update
+  "Cross-cutting Insight" with whatever the new mentions actually
+  reveal.  Don't rewrite; augment.  This is the llm-wiki compounding
+  pattern.
+
+Process every entry in both buckets unless rule 1 disqualifies it.
+
+## Page Format
 
 ```markdown
 ---
@@ -35,6 +54,7 @@ provenance:
   ambiguous: ~0.1
 created: "{{iso_timestamp}}"
 updated: "{{iso_timestamp}}"
+last_cooccurrence_score: <weighted_score from the candidate>
 tags: [synthesis]
 ---
 
@@ -42,7 +62,7 @@ tags: [synthesis]
 
 ## Connection
 
-How these two topics relate to each other. What's the fundamental link?
+How these two topics relate to each other.  What's the fundamental link?
 
 ## Where They Co-occur
 
@@ -52,7 +72,7 @@ Pages that reference both topics:
 
 ## Cross-cutting Insight
 
-What does this connection reveal? Patterns, synergies, shared principles.
+What does this connection reveal?  Patterns, synergies, shared principles.
 
 ## Tensions
 
@@ -63,25 +83,30 @@ Contradictions, trade-offs, or areas where the two concepts conflict.
 Unresolved areas at the intersection of these topics.
 ```
 
-## Execution Model
-
-This prompt is designed to be executed via `delegate_task` (not `hermes chat -q`).
-- **delegate_task**: Subagent sessions are NOT recorded in state.db → won't pollute future journals
-- **hermes chat -q**: Creates agent sessions in state.db → WILL be harvested as activity on next run
-
-The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as the `context` to a `delegate_task` call with toolsets `["file", "terminal"]`.
-
 ## Rules
 
-1. **Only synthesize pairs with genuine connections** — not just coincidental co-occurrence
-2. **Back-link from source pages** — add wikilinks to the synthesis page from the original pages
-3. **Augment existing synthesis** — if `synthesis/A-x-B.md` already exists, read it and merge new insights
-4. **PII redacted** per AGENTS.md rules
-5. **All string values in YAML frontmatter must be double-quoted**
-6. **Focus on insight**, not just listing commonalities
-7. **Use provenance markers**: ^[inferred] for synthesized connections, ^[ambiguous] for contested interpretations
-8. **Minimum 3 co-occurrences** to qualify as a candidate (unless the connection is obvious)
-
-## Existing Synthesis Pages
-
-Check `{{vault_path}}/synthesis/` for existing pages. If a pair already has a synthesis page, **augment it** — read the existing content, merge new insights, update timeline and connections. Don't skip; keep them current.
+1. **Only synthesize pairs with genuine connections.**  The mechanical
+   scan can't tell insight from incidental adjacency.  If two pages co-
+   occur only because they were both worked on in the same week, skip —
+   just don't create or update the page for that pair.
+2. **Back-link from source pages.**  After writing the synthesis page,
+   add a wikilink to it from each of the two source pages (typically
+   under their "Related" or "Related Projects" section).
+3. **Refresh = augment, never rewrite.**  For `bucket: "refresh"`
+   candidates, read the existing page first.  Preserve prior analysis,
+   timeline, and provenance markers.  Add new co-occurrences and update
+   the Cross-cutting Insight only with the new evidence.  Bump
+   `updated:` to `{{iso_timestamp}}`.
+4. **Record `last_cooccurrence_score` in frontmatter.**  Set it to the
+   candidate's `weighted_score`.  The next pipeline run reads this to
+   compute delta_score and decide whether the page needs another
+   refresh.  Omitting it forces the next run to treat the page as if it
+   has never been refreshed (false positive refresh).
+5. **PII redacted** per AGENTS.md rules.
+6. **YAML frontmatter conventions.**  String values use double quotes.
+   `tags` is a YAML list — write `tags: [synthesis, X, Y]` with no
+   surrounding quotes (quoting collapses the list into a single literal
+   tag).
+7. **Use provenance markers**: ^[inferred] for synthesized connections,
+   ^[ambiguous] for contested interpretations.
+8. **Focus on insight**, not commonality listing.

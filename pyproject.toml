@@ -3,7 +3,13 @@ name = "aidenlabs-wiki-pipeline"
 version = "0.1.0"
 description = "Daily wiki pipeline for Aiden Labs Obsidian vault"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # Pre-publish safety scan: Microsoft Presidio for PII (phones, SSNs,
+    # credit cards, IPs, etc.) + Yelp's detect-secrets for credentials /
+    # API keys / tokens.  Run as the ``safety`` phase before finalize.
+    "presidio-analyzer>=2.2",
+    "detect-secrets>=1.5",
+]
 
 [project.scripts]
 harvest = "scripts.harvest:main"

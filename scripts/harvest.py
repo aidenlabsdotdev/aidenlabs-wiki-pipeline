@@ -49,13 +49,17 @@ def harvest(db_path, start_ts, end_ts, max_content_chars=8000):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Fetch sessions (exclude cron — those are pipeline internals, not user activity)
+    # Fetch sessions. Exclude:
+    #   * cron — pipeline internals (incl. this pipeline's own runs)
+    #   * cli  — ad-hoc tinkering / one-off agent invocations, not user
+    #            activity worth journaling
+    # discord / slack / slack-user / webhook stay in.
     cursor.execute("""
-        SELECT id, source, title, started_at, ended_at, message_count, 
+        SELECT id, source, title, started_at, ended_at, message_count,
                tool_call_count, model, api_call_count, estimated_cost_usd
         FROM sessions
         WHERE started_at >= ? AND started_at < ?
-          AND source != 'cron'
+          AND source NOT IN ('cron', 'cli')
         ORDER BY started_at
     """, (start_ts, end_ts))
     

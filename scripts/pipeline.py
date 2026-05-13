@@ -83,95 +83,42 @@ def cmd_projects(args):
 
 
 def cmd_synthesis(args):
-    """Analyze wiki links to find co-occurring concepts for synthesis."""
-    vault = args.vault
+    """Analyze wiki links to find co-occurring concepts for synthesis.
+
+    Thin wrapper around ``synthesize.analyse`` — the scoring + bucket
+    logic lives there.  Keeping this file out of that logic means there's
+    only one place to change selection behaviour.
+    """
+    import sys as _sys
+    _sys.path.insert(0, SCRIPTS_DIR)
+    from synthesize import analyse  # noqa: E402
+
+    vault = Path(args.vault)
     os.makedirs(TMP_DIR, exist_ok=True)
     output = os.path.join(TMP_DIR, "synthesis-candidates.json")
 
-    # Extract wiki links from all pages
-    def extract_wiki_links(content):
-        pattern = r'\[\[([^\]|]+?)(?:\|[^]]*)?\]'
-        matches = re.findall(pattern, content)
-        return [m.strip().rstrip('.md') for m in matches if m.strip()]
+    result = analyse(
+        vault=vault,
+        half_life_days=getattr(args, "half_life_days", 60),
+        min_score=getattr(args, "min_score", 1.5),
+        n_fresh=getattr(args, "n_fresh", 8),
+        n_refresh=getattr(args, "n_refresh", 7),
+        min_refresh_delta=getattr(args, "min_refresh_delta", 0.5),
+    )
 
-    # Scan vault
-    page_links = {}
-    for root, dirs, files in os.walk(vault):
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
-        for filename in files:
-            if not filename.endswith('.md') or filename.startswith('.'):
-                continue
-            filepath = os.path.join(root, filename)
-            rel_path = os.path.relpath(filepath, vault)
-            try:
-                content = open(filepath, 'r', encoding='utf-8', errors='replace').read()
-            except (IOError, OSError):
-                continue
-            links = extract_wiki_links(content)
-            if links:
-                page_links[rel_path] = set(links)
-
-    # Build co-occurrence matrix
-    cooccurrence = defaultdict(int)
-    target_pages = defaultdict(set)
-    for page, links in page_links.items():
-        for link in links:
-            target_pages[link].add(page)
-        links_list = sorted(links)
-        for a, b in combinations(links_list, 2):
-            cooccurrence[(a, b)] += 1
-
-    # Find existing synthesis pages
-    existing = set()
-    synthesis_dir = os.path.join(vault, "synthesis")
-    if os.path.isdir(synthesis_dir):
-        for filename in os.listdir(synthesis_dir):
-            if filename.endswith('.md'):
-                name = filename[:-3]
-                if 'x' in name:
-                    parts = name.split('x', 1)
-                    if len(parts) == 2:
-                        existing.add((parts[0].strip(), parts[1].strip()))
-
-    # Find candidates
-    min_co = getattr(args, 'min_cooccurrence', 2)
-    candidates = []
-    for (a, b), count in cooccurrence.items():
-        if count < min_co:
-            continue
-        pair = (a, b)
-        reverse = (b, a)
-        if pair in existing or reverse in existing:
-            continue
-        if a.startswith('_') or b.startswith('_'):
-            continue
-        candidates.append({
-            "pair": [a, b],
-            "cooccurrences": count,
-            "suggested_filename": f"{os.path.basename(a).replace('_', '-')}-x-{os.path.basename(b).replace('_', '-')}.md",
-        })
-
-    candidates.sort(key=lambda x: x["cooccurrences"], reverse=True)
-
-    result = {
-        "vault": vault,
-        "pages_scanned": len(page_links),
-        "existing_synthesis": len(existing),
-        "total_cooccurrences": len(cooccurrence),
-        "candidates": candidates,
-        "top_linked": dict(sorted(
-            [(k, len(v)) for k, v in target_pages.items()],
-            key=lambda x: x[1], reverse=True
-        )[:20]),
-    }
-
-    with open(output, 'w') as f:
+    with open(output, "w") as f:
         json.dump(result, f, indent=2, default=str)
 
+    fresh = len(result["buckets"]["fresh"])
+    refresh = len(result["buckets"]["refresh"])
     print(f"Synthesis candidates → {output}")
     print(f"  Pages scanned: {result['pages_scanned']}")
     print(f"  Existing synthesis: {result['existing_synthesis']}")
-    print(f"  New candidates: {len(candidates)}")
+    print(f"  Selected: {fresh} fresh + {refresh} refresh = {fresh + refresh}")
+    print(
+        f"  Pool sizes: fresh={result['pool_sizes']['fresh']}, "
+        f"refresh={result['pool_sizes']['refresh']}"
+    )
 
 
 def cmd_update_meta(args):
@@ -367,6 +314,33 @@ def cmd_prompt(args):
     print(prompt)
 
 
+def cmd_stub_projects(args):
+    """Create stub project pages for journal wikilink targets."""
+    import sys as _sys
+    _sys.path.insert(0, SCRIPTS_DIR)
+    from stub_projects import (
+      journal_paths as _jp, referenced_project_slugs as _refs,
+      stub_path as _sp, write_stub as _ws,
+    )
+
+    vault = Path(args.vault)
+    files = _jp(vault, args.journal_date, args.all_journals)
+    if not files:
+        print("stub-projects: no journal files matched")
+        return
+    slugs = _refs(files)
+    created = 0
+    for slug in sorted(slugs):
+        path = _sp(vault, slug)
+        if _ws(path, slug):
+            created += 1
+            print(f"stub-projects: created {path.relative_to(vault)}")
+    print(
+        f"stub-projects: {len(files)} journal(s), {len(slugs)} project ref(s), "
+        f"{created} stub(s) created"
+    )
+
+
 def cmd_fix_links(args):
     """Repair broken wikilinks in the vault."""
     import sys as _sys
@@ -466,7 +440,18 @@ def main():
     # Synthesis candidates
     p_synthesis = subparsers.add_parser("synthesis", help="Find synthesis candidates")
     p_synthesis.add_argument("--vault", default=VAULT_DEFAULT)
-    p_synthesis.add_argument("--min-cooccurrence", type=int, default=2)
+    p_synthesis.add_argument("--half-life-days", type=int, default=60,
+                             help="Journal recency half-life for co-occurrence scoring")
+    p_synthesis.add_argument("--min-score", type=float, default=1.5,
+                             help="Weighted-score floor for any candidate")
+    p_synthesis.add_argument("--n-fresh", type=int, default=8,
+                             help="Slots reserved for unsynthesised pairs")
+    p_synthesis.add_argument("--n-refresh", type=int, default=7,
+                             help="Slots reserved for refreshing existing pages")
+    p_synthesis.add_argument("--min-refresh-delta", type=float, default=0.5,
+                             help="Required score gain since last update to qualify for refresh. "
+                                  "Pages with no new co-occurrence drop out via this gate — "
+                                  "no time-based cooldown needed.")
     p_synthesis.set_defaults(func=cmd_synthesis)
 
     # Update meta
@@ -481,6 +466,18 @@ def main():
     p_prompt.add_argument("--vault", default=VAULT_DEFAULT)
     p_prompt.add_argument("--top", type=int, default=5)
     p_prompt.set_defaults(func=cmd_prompt)
+
+    # Stub projects (mechanical — create empty project pages for journal refs)
+    p_stub = subparsers.add_parser(
+      "stub-projects",
+      help="Create stub project pages for [[projects/X]] wikilinks in journals",
+    )
+    p_stub.add_argument("--vault", default=VAULT_DEFAULT)
+    g_stub = p_stub.add_mutually_exclusive_group()
+    g_stub.add_argument("--journal-date", help="Stub for one date (YYYY-MM-DD)")
+    g_stub.add_argument("--all-journals", action="store_true",
+                        help="Scan every journal entry")
+    p_stub.set_defaults(func=cmd_stub_projects)
 
     # Fix links (mechanical wikilink repair)
     p_fixlinks = subparsers.add_parser("fix-links", help="Repair broken wikilinks")

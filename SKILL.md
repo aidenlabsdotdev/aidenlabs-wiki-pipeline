@@ -38,13 +38,29 @@ cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
 ## Pipeline Flow
 
 ```
-_input_                          _pipeline_                        _output_
-─────────────────────────────────────────────────────────────────────────────
+_input_                          _pipeline_                                          _output_
+───────────────────────────────────────────────────────────────────────────────────────────────
 _meta/taxonomy.md ──┐
-_meta/hot.md   ──┤     harvest → journal → projects → synthesis → fix-links → update-meta
-_meta/insights.md─┤                                                    ↓
-AGENTS.md      ──┘                                              finalize (log, rsync)
+_meta/hot.md   ──┤     harvest → journal → stub-projects → projects → synthesis → fix-links → update-meta
+_meta/insights.md─┤      (mech)   (LLM)       (mech)        (LLM)      (LLM)         (mech)     (mech)
+AGENTS.md      ──┘                                                                       ↓
+                                                                              finalize (log, rsync)
 ```
+
+**Phase responsibilities — keep them distinct:**
+
+* `journal` documents **what happened on this specific day**. Short narrative,
+  workstream subsections, wikilinks to projects. Does NOT elaborate on any
+  project — that's what project pages are for.
+* `stub-projects` (mechanical) creates an empty stub at `projects/<slug>.md`
+  for every `[[projects/<slug>]]` wikilink in the new journal that doesn't
+  resolve. Keeps Obsidian links clean and gives the next phase a clear queue.
+* `projects` (LLM) does two jobs: **enrich every stub** with a real overview
+  drawn from journals + source code, AND **augment existing project pages**
+  with new information. Also scans for repos that are clearly significant
+  but have no wiki page yet, and promotes those.
+* `synthesis` finds cross-project co-occurrence patterns and writes
+  synthesis pages.
 
 1. **Read** `_meta/` + `AGENTS.md` as context for LLM phases
 2. **Run** mechanical + LLM phases sequentially
@@ -103,7 +119,7 @@ context: |
 
   Decide which repos are actual projects vs throwaway experiments.
   For each real project, create:
-  /home/jasper/Obsidian/aidenlabs/projects/<slug>/<slug>.md
+  /home/jasper/Obsidian/aidenlabs/projects/<slug>.md
 
   Include: overview, linked repos, current status, related concepts.
   Use kebab-case slugs. Be conservative.

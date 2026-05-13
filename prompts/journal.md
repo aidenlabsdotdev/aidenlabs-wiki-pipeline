@@ -71,20 +71,37 @@ Group sessions by workstream/theme — NOT chronologically. Each subsection name
 - [[projects/relevant-project]]
 ```
 
-## Execution Model
-
-This prompt is designed to be executed via `delegate_task` (not `hermes chat -q`).
-- **delegate_task**: Subagent sessions are NOT recorded in state.db → won't pollute future journals
-- **hermes chat -q**: Creates agent sessions in state.db → WILL be harvested as activity on next run
-
-The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as the `context` to a `delegate_task` call with toolsets `["file", "terminal"]`.
-
 1. **Section names are fixed**: Summary → Activity → Learnings → Open Items → Related
 2. **Activity subsections named by workstream**, not generic labels like "Key Activities"
 3. **Every substantive claim gets provenance marker** if inferred or ambiguous
-4. **Wikilink to every project touched** — minimum 2-3 links per journal
+4. **Wikilink to every project touched** — minimum 2-3 links per journal.
+   **Don't worry whether the target page exists** — pipeline's `stub-projects`
+   step runs immediately after journal generation and creates a stub at
+   `projects/<slug>.md` for any new reference.  Just use the slug
+   you think the project should have (kebab-case, descriptive).
 5. **Related section always links to previous journal** for temporal continuity
 6. **No session-by-session listing** — group by theme, not chronology
 7. **PII redacted** per AGENTS.md rules
-8. **All string values in YAML frontmatter must be double-quoted** (especially `summary`)
+8. **String values in YAML frontmatter must be double-quoted** (especially `summary`).
+   **`tags` is a YAML LIST, not a string** — write it as ``tags: [journal]``
+   with no surrounding quotes.  Writing ``tags: "[journal]"`` produces a
+   single tag literally named ``[journal]`` (with brackets), which
+   Obsidian renders incorrectly.
 9. **Only generate for completed calendar days** — never partial days
+
+## Scope: what this journal IS and IS NOT
+
+**IS** — a narrative record of what happened on this specific day.
+A reader scanning past journals can reconstruct the timeline of work,
+decisions, and learnings.  Workstream subsections are short (3-6 bullets);
+project pages and synthesis pages are where details live.
+
+**IS NOT** — an authoritative reference for any project.  Don't write
+multi-paragraph project explanations, architecture overviews, status
+updates, or roadmaps in this journal.  Those belong in `projects/<slug>.md`
+(written by the projects-sync phase).  When you'd be tempted to elaborate
+on a project's design or current state, link to the project page and let
+projects-sync render that detail there.
+
+The journal is "what we did on {{date}}"; project pages are "what this
+project is."  Keep them separated.
