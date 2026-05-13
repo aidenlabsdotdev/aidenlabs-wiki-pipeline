@@ -1,0 +1,23 @@
+# Pipeline-local CODEX_HOME.
+#
+# This file exists only so codex-sdk has a CODEX_HOME to point at while
+# dispatch.py runs codex-goal for the wiki pipeline.  codex-goal-v2.ts
+# passes the model / provider / sandbox config inline via
+# `new Codex({ config: {...} })`, so the file is deliberately kept free
+# of those fields.
+#
+# What we DO keep out of the user's ~/.codex/config.toml:
+#
+#   * [mcp_servers.chrome]  — the pipeline only reads/writes markdown.
+#     The chrome MCP adds ~30 tool schemas (~6k tokens) to every codex
+#     turn, slowing each iteration with no benefit here.
+#   * Any other [mcp_servers.*] — pipeline doesn't need agentmail,
+#     bitwarden, etc.
+#   * Skill autoloading — codex-sdk's built-in skill catalog still
+#     applies, but anything in ~/.codex/skills/ does not, since the
+#     home redirects here.
+#
+# Mark the vault trusted so approval prompts don't block the run.
+
+[projects."/home/jasper/Obsidian/aidenlabs"]
+trust_level = "trusted"

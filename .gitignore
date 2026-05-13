@@ -1,3 +1,9 @@
 __pycache__/
 *.egg-info/
 .venv/
+
+# Pipeline-local CODEX_HOME — only config.toml is tracked; everything
+# else (sqlite logs, shell snapshots, sub-skill caches, etc.) is runtime
+# state codex-sdk writes on every invocation.
+.codex-home/*
+!.codex-home/config.toml

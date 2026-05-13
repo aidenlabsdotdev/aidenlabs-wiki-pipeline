@@ -37,6 +37,45 @@ PIPELINE = REPO_ROOT / "scripts" / "pipeline.py"
 VENV_PY = REPO_ROOT / ".venv" / "bin" / "python"
 CODEX_GOAL = "codex-goal"  # on PATH (via ~/.local/bin)
 
+# Pipeline-local CODEX_HOME (see .codex-home/config.toml).  Replaces the
+# user's ~/.codex/config.toml so codex-sdk doesn't auto-load the chrome
+# MCP (which the wiki pipeline never uses but which adds ~6k tokens of
+# tool schemas to every codex turn).
+PIPELINE_CODEX_HOME = REPO_ROOT / ".codex-home"
+
+
+def _suppress_codex_skills() -> None:
+  """Keep the seeded-system-skills marker file but wipe its sibling dirs.
+
+  codex-sdk seeds five "system" skills (imagegen, openai-docs,
+  plugin-creator, skill-creator, skill-installer) into
+  ``CODEX_HOME/skills/.system/`` on first run, then lists them in every
+  prompt under ``<skills_instructions>``.  None of them are useful to
+  the wiki pipeline and they add ~2 KB of always-on prompt overhead.
+
+  The marker file ``.codex-system-skills.marker`` is what tells codex
+  "already seeded, skip" on subsequent runs.  We keep it and wipe
+  everything else under ``.system/`` so codex sees an empty skill
+  catalog without re-triggering the seed step.
+  """
+  system_dir = PIPELINE_CODEX_HOME / "skills" / ".system"
+  system_dir.mkdir(parents=True, exist_ok=True)
+  marker = system_dir / ".codex-system-skills.marker"
+  if not marker.exists():
+    # Any non-empty content satisfies codex's "is this seeded?" check.
+    marker.write_text("pipeline-suppressed\n")
+  for child in system_dir.iterdir():
+    if child.name == ".codex-system-skills.marker":
+      continue
+    if child.is_dir():
+      import shutil as _shutil
+      _shutil.rmtree(child)
+    else:
+      child.unlink()
+
+
+_suppress_codex_skills()
+
 # Canonical env source for the Hermes/agent stack.  ``systemd --user`` loads
 # this at session start, but freshly-added keys aren't picked up by shells
 # started before the edit — so we re-source it here.  Local env always wins.
@@ -139,8 +178,11 @@ def run_phase(
     file=sys.stderr,
     flush=True,
   )
-  # Inherit stdout/stderr so the operator sees progress live.
-  rc = subprocess.run(cmd, check=False).returncode
+  # Inherit stdout/stderr so the operator sees progress live.  Override
+  # CODEX_HOME so codex-sdk reads our trimmed config.toml (no chrome MCP
+  # etc.) rather than the user's ~/.codex/config.toml.
+  env = {**os.environ, "CODEX_HOME": str(PIPELINE_CODEX_HOME)}
+  rc = subprocess.run(cmd, env=env, check=False).returncode
   print(f"dispatch: {phase} → exit {rc}", file=sys.stderr, flush=True)
   return rc
 
