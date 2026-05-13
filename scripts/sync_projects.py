@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_TASKS_DIR = os.path.expanduser("~/Tasks")
+DEFAULT_TASKS_DIR = os.path.expanduser("~/Repositories")
 
 
 def parse_args():

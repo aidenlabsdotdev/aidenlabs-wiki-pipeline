@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 VAULT_DEFAULT = os.path.expanduser("~/Obsidian/aidenlabs")
 TMP_DIR = os.path.expanduser("~/.cache/wiki-pipeline")
-PUBLIC_DIR = os.path.expanduser("~/Tasks/aidenlabs-vault/public")
+PUBLIC_DIR = os.path.expanduser("~/Repositories/aidenlabs-md/public")
 
 
 def cmd_harvest(args):
@@ -56,7 +56,7 @@ def cmd_projects(args):
     os.makedirs(TMP_DIR, exist_ok=True)
     output = os.path.join(TMP_DIR, "projects-manifest.json")
 
-    tasks_repos = scan_tasks_dir(getattr(args, 'tasks_dir', None) or os.path.expanduser("~/Tasks"))
+    tasks_repos = scan_tasks_dir(getattr(args, 'tasks_dir', None) or os.path.expanduser("~/Repositories"))
     vault_projects = scan_vault_projects(vault)
     github_repos = find_github_org_repos()
     manifest = build_manifest(tasks_repos, vault_projects, github_repos)
@@ -122,7 +122,7 @@ def main():
     # Projects
     p_projects = subparsers.add_parser("projects", help="Scan repos and vault")
     p_projects.add_argument("--vault", default=VAULT_DEFAULT)
-    p_projects.add_argument("--tasks-dir", default=os.path.expanduser("~/Tasks"))
+    p_projects.add_argument("--tasks-dir", default=os.path.expanduser("~/Repositories"))
     p_projects.set_defaults(func=cmd_projects)
 
     # Finalize
