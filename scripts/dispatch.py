@@ -37,6 +37,40 @@ PIPELINE = REPO_ROOT / "scripts" / "pipeline.py"
 VENV_PY = REPO_ROOT / ".venv" / "bin" / "python"
 CODEX_GOAL = "codex-goal"  # on PATH (via ~/.local/bin)
 
+# Canonical env source for the Hermes/agent stack.  ``systemd --user`` loads
+# this at session start, but freshly-added keys aren't picked up by shells
+# started before the edit — so we re-source it here.  Local env always wins.
+SYSTEMD_ENV_DIR = Path.home() / ".config" / "environment.d"
+
+
+def _load_systemd_env() -> None:
+  """Populate any missing keys from ``~/.config/environment.d/*.conf``.
+
+  We don't override values already in ``os.environ`` — the active shell's
+  configuration wins.  Only keys that are entirely absent get filled in.
+  This means stale shells (started before a new key was added to the conf
+  files) still see the new value, without overriding any ad-hoc overrides
+  the user has set for this specific session.
+  """
+  if not SYSTEMD_ENV_DIR.is_dir():
+    return
+  for conf in sorted(SYSTEMD_ENV_DIR.glob("*.conf")):
+    try:
+      text = conf.read_text(encoding="utf-8")
+    except OSError:
+      continue
+    for raw in text.splitlines():
+      line = raw.strip()
+      if not line or line.startswith("#") or "=" not in line:
+        continue
+      key, _, value = line.partition("=")
+      key = key.strip()
+      if key and key not in os.environ:
+        os.environ[key] = value.strip()
+
+
+_load_systemd_env()
+
 
 def _strip_frontmatter(text: str) -> str:
   """Remove a leading ``---\\n...\\n---\\n`` YAML block, if present.
