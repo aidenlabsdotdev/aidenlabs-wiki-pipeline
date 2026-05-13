@@ -36,16 +36,20 @@ lint:
 	{{PYTHON}} {{LINT}} --vault {{VAULT}}
 
 # Pre-publish safety scan: Presidio (PII) + detect-secrets (credentials)
-# across every .md in the vault.  Emails are explicitly allowed; phones,
-# SSNs, EINs, credit cards, API keys, tokens etc. block.  Halts the
-# pipeline before finalize/rsync if anything is found.
+# across every .md in the vault.  Blocks on US_SSN / US_ITIN /
+# CREDIT_CARD / IBAN_CODE / US_BANK_NUMBER / CRYPTO / US_EIN, plus
+# pattern-based detect-secrets matches (AWS, GitHub, Stripe, Slack,
+# JWT, etc.).  Permissive by design — entropy heuristics off, low-
+# confidence Presidio hits dropped — but available as a standalone
+# audit (`just safety`) when you want a sanity check.  Not wired into
+# the default daily run; the LLM phases self-redact per AGENTS.md.
 safety:
 	{{PYTHON}} {{SCAN_SAFETY}} --vault {{VAULT}}
 
 # Daily full pipeline: journal → projects → synthesize → fix-links →
-# update-meta → lint → safety → finalize.  safety is the trust boundary
-# — if it finds anything, the vault never reaches aidenlabs-md.
-full: journal projects synthesize fix-links meta lint safety finalize-today
+# update-meta → lint → finalize.  ``safety`` is intentionally not in
+# the chain — see its target comment above.
+full: journal projects synthesize fix-links meta lint finalize-today
 
 # Friendly alias — `just run` is what you reach for daily.
 run: full
