@@ -75,7 +75,7 @@ The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as t
 
 1. **Only synthesize pairs with genuine connections** — not just coincidental co-occurrence
 2. **Back-link from source pages** — add wikilinks to the synthesis page from the original pages
-3. **Skip existing synthesis** — if `synthesis/A-x-B.md` already exists, skip it
+3. **Augment existing synthesis** — if `synthesis/A-x-B.md` already exists, read it and merge new insights
 4. **PII redacted** per AGENTS.md rules
 5. **All string values in YAML frontmatter must be double-quoted**
 6. **Focus on insight**, not just listing commonalities
