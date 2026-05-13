@@ -7,32 +7,32 @@ HARVEST_JOURNALS := "/home/jasper/Repositories/aidenlabs-wiki-pipeline/scripts/h
 
 # ── Journal ────────────────────────────────────────────────────────────────
 journal:
-	python {{HARVEST_JOURNALS}} --vault {{VAULT}} --db {{DB}} --pipeline {{PIPELINE}}
+	python3 {{HARVEST_JOURNALS}} --vault {{VAULT}} --db {{DB}} --pipeline {{PIPELINE}}
 
 prompt-journal date:
-	python {{PIPELINE}} prompt journal --date {{date}} --vault {{VAULT}}
+	python3 {{PIPELINE}} prompt journal --date {{date}} --vault {{VAULT}}
 
 # ── Projects ───────────────────────────────────────────────────────────────
 projects:
-	python {{PIPELINE}} projects --vault {{VAULT}}
+	python3 {{PIPELINE}} projects --vault {{VAULT}}
 
 prompt-projects:
-	python {{PIPELINE}} prompt projects --vault {{VAULT}}
+	python3 {{PIPELINE}} prompt projects --vault {{VAULT}}
 
 # ── Synthesis ──────────────────────────────────────────────────────────────
 synthesis:
-	python {{PIPELINE}} synthesis --vault {{VAULT}}
+	python3 {{PIPELINE}} synthesis --vault {{VAULT}}
 
 prompt-synthesis:
-	python {{PIPELINE}} prompt synthesis --vault {{VAULT}} --top 5
+	python3 {{PIPELINE}} prompt synthesis --vault {{VAULT}} --top 5
 
 # ── Meta ───────────────────────────────────────────────────────────────────
 meta:
-	python {{PIPELINE}} update-meta --vault {{VAULT}}
+	python3 {{PIPELINE}} update-meta --vault {{VAULT}}
 
 # ── Finalize ───────────────────────────────────────────────────────────────
 finalize:
-	python {{PIPELINE}} finalize --vault {{VAULT}} --date "$(date -u '+%Y-%m-%d')"
+	python3 {{PIPELINE}} finalize --vault {{VAULT}} --date "$(date -u '+%Y-%m-%d')"
 
 # ── Full ───────────────────────────────────────────────────────────────────
 full: journal projects synthesis meta finalize
