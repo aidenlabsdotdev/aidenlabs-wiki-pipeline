@@ -39,21 +39,20 @@ from typing import Iterable, Optional
 # What we DO and DON'T flag
 # ---------------------------------------------------------------------------
 
-# Presidio entity names we want to block.  Everything else from the default
-# recognizer set is downgraded to a warning (still reported, doesn't fail).
+# Presidio entity names we block.  Deliberately narrow: only entities
+# whose Presidio recognizers have a strict format and high precision.
+# Categories like PHONE_NUMBER, US_DRIVER_LICENSE, DATE_OF_BIRTH, and
+# US_PASSPORT routinely false-positive on prose, ISO timestamps, and
+# arbitrary digit sequences — they go in ``WARN_PII`` (reported but
+# non-blocking) when we want them at all.
 BLOCK_PII = frozenset(
   {
-    "PHONE_NUMBER",
     "US_SSN",
     "US_ITIN",
-    "US_DRIVER_LICENSE",
-    "US_PASSPORT",
     "CREDIT_CARD",
     "IBAN_CODE",
     "US_BANK_NUMBER",
     "CRYPTO",  # wallet addresses
-    "MEDICAL_LICENSE",
-    "DATE_OF_BIRTH",
   }
 )
 
@@ -111,6 +110,15 @@ def _build_analyzer():
   return analyzer
 
 
+# Presidio recognizers return matches with a confidence in [0, 1].  We
+# only care about high-precision hits — the kind of finding a human
+# would immediately recognise as "yes that's a real SSN / credit card /
+# IBAN".  Presidio's strict recognizers (those with Luhn checks, valid
+# IBAN checksums, etc.) score ≥0.85 on real values.  Anything lower is
+# almost always noise from a regex partial-match against prose.
+PRESIDIO_MIN_SCORE = 0.85
+
+
 def _scan_presidio(
   analyzer, content: str, rel: str, language: str = "en"
 ) -> list[Finding]:
@@ -119,30 +127,74 @@ def _scan_presidio(
   # Limit Presidio to the entities we care about + our custom EIN
   entities = sorted(BLOCK_PII | {"US_EIN"})
   results = analyzer.analyze(text=content, language=language, entities=entities)
+  # Dedupe by (line, kind) — Presidio often fires multiple overlapping
+  # recognizers for the same entity (e.g. two distinct US_DRIVER_LICENSE
+  # patterns on the same span).  We only need to report the strongest
+  # hit per (line, kind) to give the operator a clear signal.
+  best: dict[tuple[int, str], Finding] = {}
   for r in results:
     if r.entity_type in ALLOW_PII:
       continue
+    if float(r.score) < PRESIDIO_MIN_SCORE:
+      continue
     ln, snippet = _line_context(content, r.start, r.end)
-    findings.append(
-      Finding(
-        file=rel,
-        line=ln,
-        kind=r.entity_type,
-        score=float(r.score),
-        snippet=snippet,
-        engine="presidio",
-      )
+    key = (ln, r.entity_type)
+    cand = Finding(
+      file=rel,
+      line=ln,
+      kind=r.entity_type,
+      score=float(r.score),
+      snippet=snippet,
+      engine="presidio",
     )
+    if key not in best or cand.score > best[key].score:
+      best[key] = cand
+  findings.extend(best.values())
   return findings
+
+
+# Pattern-based detectors only.  The entropy-based plugins
+# (``Base64HighEntropyString``, ``HexHighEntropyString``) flag any line
+# that looks "random-ish" — including plain English prose — and they
+# multiply each other (a single sentence about credentials gets reported
+# dozens of times).  Pattern detectors match real credential shapes
+# (AWS AKIA, GitHub ghp_*, Stripe sk_live_*, Slack xoxb_*, etc.) and
+# don't fire on prose.
+_DETECT_SECRETS_PLUGINS = [
+  {"name": "ArtifactoryDetector"},
+  {"name": "AWSKeyDetector"},
+  {"name": "AzureStorageKeyDetector"},
+  {"name": "BasicAuthDetector"},
+  {"name": "CloudantDetector"},
+  {"name": "DiscordBotTokenDetector"},
+  {"name": "GitHubTokenDetector"},
+  {"name": "GitLabTokenDetector"},
+  {"name": "IbmCloudIamDetector"},
+  {"name": "IbmCosHmacDetector"},
+  {"name": "IPPublicDetector"},
+  {"name": "JwtTokenDetector"},
+  {"name": "MailchimpDetector"},
+  {"name": "NpmDetector"},
+  {"name": "OpenAIDetector"},
+  {"name": "PrivateKeyDetector"},
+  {"name": "PypiTokenDetector"},
+  {"name": "SendGridDetector"},
+  {"name": "SlackDetector"},
+  {"name": "SoftlayerDetector"},
+  {"name": "SquareOAuthDetector"},
+  {"name": "StripeDetector"},
+  {"name": "TelegramBotTokenDetector"},
+  {"name": "TwilioKeyDetector"},
+]
 
 
 def _scan_detect_secrets(content: str, rel: str) -> list[Finding]:
   """Run detect-secrets against a single file's content."""
   from detect_secrets.core.scan import scan_line  # type: ignore
-  from detect_secrets.settings import default_settings
+  from detect_secrets.settings import transient_settings
 
   findings: list[Finding] = []
-  with default_settings():
+  with transient_settings({"plugins_used": _DETECT_SECRETS_PLUGINS}):
     for lineno, line in enumerate(content.splitlines(), start=1):
       for secret in scan_line(line):
         # secret.secret_value is the redacted form; type is plugin name.
