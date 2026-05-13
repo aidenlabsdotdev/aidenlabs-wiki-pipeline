@@ -41,9 +41,9 @@ cd ~/Tasks/aidenlabs-wiki-pipeline && source .venv/bin/activate
 _input_                          _pipeline_                        _output_
 ─────────────────────────────────────────────────────────────────────────────
 _meta/taxonomy.md ──┐
-_meta/hot.md   ──┤     harvest → journal → projects → synthesis → update-meta
-_meta/insights.md─┤                                    ↓
-AGENTS.md      ──┘                              finalize (log, rsync)
+_meta/hot.md   ──┤     harvest → journal → projects → synthesis → fix-links → update-meta
+_meta/insights.md─┤                                                    ↓
+AGENTS.md      ──┘                                              finalize (log, rsync)
 ```
 
 1. **Read** `_meta/` + `AGENTS.md` as context for LLM phases

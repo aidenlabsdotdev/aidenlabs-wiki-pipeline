@@ -367,6 +367,30 @@ def cmd_prompt(args):
     print(prompt)
 
 
+def cmd_fix_links(args):
+    """Repair broken wikilinks in the vault."""
+    import sys as _sys
+    _sys.path.insert(0, SCRIPTS_DIR)
+    from fix_links import build_index as _bi, fix_links_in_file as _fl
+
+    vault = Path(args.vault)
+    index = _bi(vault)
+
+    total = 0
+    files_changed = 0
+    for md_file in sorted(vault.rglob('*.md')):
+        if str(md_file.relative_to(vault)).startswith('_meta/'):
+            continue
+        changes = _fl(md_file, index, args.dry_run)
+        if changes > 0:
+            rel = md_file.relative_to(vault)
+            print(f"[{'DRY RUN' if args.dry_run else 'FIXED'}] {rel} ({changes} link(s))")
+            total += changes
+            files_changed += 1
+
+    print(f"\nDone: {files_changed} file(s), {total} link(s) fixed.")
+
+
 def cmd_finalize(args):
     """Append log, sanitize frontmatter, rsync to public/, regenerate notes.json."""
     vault = args.vault
@@ -457,6 +481,12 @@ def main():
     p_prompt.add_argument("--vault", default=VAULT_DEFAULT)
     p_prompt.add_argument("--top", type=int, default=5)
     p_prompt.set_defaults(func=cmd_prompt)
+
+    # Fix links (mechanical wikilink repair)
+    p_fixlinks = subparsers.add_parser("fix-links", help="Repair broken wikilinks")
+    p_fixlinks.add_argument("--vault", default=VAULT_DEFAULT)
+    p_fixlinks.add_argument("--dry-run", action="store_true")
+    p_fixlinks.set_defaults(func=cmd_fix_links)
 
     # Finalize
     p_finalize = subparsers.add_parser("finalize", help="Log, sync, regenerate manifest")

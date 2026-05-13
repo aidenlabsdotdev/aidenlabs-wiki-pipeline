@@ -27,6 +27,11 @@ synthesis:
 prompt-synthesis:
 	{{PYTHON}} {{PIPELINE}} prompt synthesis --vault {{VAULT}} --top 5
 
+# ── Fix Links ──────────────────────────────────────────────────────────────
+# Repair broken wikilinks (mechanical, no LLM)
+fix-links:
+	{{PYTHON}} {{PIPELINE}} fix-links --vault {{VAULT}}
+
 # ── Meta ───────────────────────────────────────────────────────────────────
 meta:
 	{{PYTHON}} {{PIPELINE}} update-meta --vault {{VAULT}}
@@ -36,4 +41,4 @@ finalize:
 	{{PYTHON}} {{PIPELINE}} finalize --vault {{VAULT}} --date "$(date -u '+%Y-%m-%d')"
 
 # ── Full ───────────────────────────────────────────────────────────────────
-full: journal projects synthesis meta finalize
+full: journal projects synthesis fix-links meta finalize
