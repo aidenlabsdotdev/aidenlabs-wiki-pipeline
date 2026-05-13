@@ -78,41 +78,25 @@ def scan_tasks_dir(tasks_dir):
 
 
 def scan_vault_projects(vault_path):
-    """Scan existing project pages in the vault."""
+    """Scan existing project pages in the vault (flat: projects/<slug>.md)."""
     projects = {}
     projects_dir = os.path.join(vault_path, "projects")
     
     if not os.path.isdir(projects_dir):
         return projects
     
-    for entry in os.listdir(projects_dir):
-        project_dir = os.path.join(projects_dir, entry)
-        if not os.path.isdir(project_dir):
+    for entry in sorted(os.listdir(projects_dir)):
+        # Flat files only: projects/<slug>.md
+        if not entry.endswith('.md'):
+            continue
+        filepath = os.path.join(projects_dir, entry)
+        if not os.path.isfile(filepath):
             continue
         
-        # Check for main project page
-        main_page = None
-        for ext in [f"{entry}.md", f"{entry.replace('-', '_')}.md"]:
-            path = os.path.join(project_dir, ext)
-            if os.path.exists(path):
-                main_page = ext
-                break
-        
-        # Count sub-pages
-        page_count = sum(
-            1 for root, dirs, files in os.walk(project_dir)
-            for f in files if f.endswith('.md')
-        )
-        
-        # List subdirs
-        subdirs = [d for d in os.listdir(project_dir) 
-                   if os.path.isdir(os.path.join(project_dir, d))]
-        
-        projects[entry] = {
-            "path": project_dir,
-            "main_page": main_page,
-            "page_count": page_count,
-            "subdirs": subdirs,
+        slug = entry[:-3]  # strip .md
+        projects[slug] = {
+            "path": filepath,
+            "slug": slug,
         }
     
     return projects
