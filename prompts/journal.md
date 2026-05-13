@@ -71,7 +71,13 @@ Group sessions by workstream/theme — NOT chronologically. Each subsection name
 - [[projects/relevant-project]]
 ```
 
-## Rules
+## Execution Model
+
+This prompt is designed to be executed via `delegate_task` (not `hermes chat -q`).
+- **delegate_task**: Subagent sessions are NOT recorded in state.db → won't pollute future journals
+- **hermes chat -q**: Creates agent sessions in state.db → WILL be harvested as activity on next run
+
+The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as the `context` to a `delegate_task` call with toolsets `["file", "terminal"]`.
 
 1. **Section names are fixed**: Summary → Activity → Learnings → Open Items → Related
 2. **Activity subsections named by workstream**, not generic labels like "Key Activities"

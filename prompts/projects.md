@@ -72,6 +72,14 @@ File structure or component breakdown.
 - Blockers, limitations, open questions ^[inferred]
 ```
 
+## Execution Model
+
+This prompt is designed to be executed via `delegate_task` (not `hermes chat -q`).
+- **delegate_task**: Subagent sessions are NOT recorded in state.db → won't pollute future journals
+- **hermes chat -q**: Creates agent sessions in state.db → WILL be harvested as activity on next run
+
+The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as the `context` to a `delegate_task` call with toolsets `["file", "terminal", "web"]`.
+
 ## Rules
 
 1. **Read actual source code** (README.md, package.json, key files) — don't just summarize journals

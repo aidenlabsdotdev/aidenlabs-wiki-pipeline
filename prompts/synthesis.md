@@ -63,6 +63,14 @@ Contradictions, trade-offs, or areas where the two concepts conflict.
 Unresolved areas at the intersection of these topics.
 ```
 
+## Execution Model
+
+This prompt is designed to be executed via `delegate_task` (not `hermes chat -q`).
+- **delegate_task**: Subagent sessions are NOT recorded in state.db → won't pollute future journals
+- **hermes chat -q**: Creates agent sessions in state.db → WILL be harvested as activity on next run
+
+The orchestrator reads this prompt, fills in `{{variables}}`, and passes it as the `context` to a `delegate_task` call with toolsets `["file", "terminal"]`.
+
 ## Rules
 
 1. **Only synthesize pairs with genuine connections** — not just coincidental co-occurrence
