@@ -394,9 +394,12 @@ def cmd_finalize(args):
     if sf_count:
         print(f"Sanitized {sf_count} frontmatter field(s)")
 
-    # Sync to public
+    # Sync to public.  Exclude VCS + editor metadata: .git in particular
+    # must never reach public/ — wrangler would publish it and a public
+    # .git tree leaks full history.
     result = subprocess.run(
-        ["rsync", "-av", "--delete", "--exclude=.obsidian", "--exclude=*.tmp",
+        ["rsync", "-av", "--delete",
+         "--exclude=.git", "--exclude=.obsidian", "--exclude=*.tmp",
          vault + "/", PUBLIC_DIR + "/"],
         capture_output=True, text=True
     )
